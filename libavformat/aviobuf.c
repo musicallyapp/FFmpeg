@@ -33,14 +33,14 @@
 #include "url.h"
 #include <stdarg.h>
 
-#define IO_BUFFER_SIZE (32768 * 2)
+#define IO_BUFFER_SIZE 32768
 
 /**
  * Do seeks within this distance ahead of the current buffer by skipping
  * data instead of calling the protocol seek function, for seekable
  * protocols.
  */
-#define SHORT_SEEK_THRESHOLD (4096 * 8)
+#define SHORT_SEEK_THRESHOLD 4096
 
 static void *ff_avio_child_next(void *obj, void *prev)
 {
@@ -213,6 +213,7 @@ int64_t avio_seek(AVIOContext *s, int64_t offset, int whence)
         return AVERROR(EINVAL);
 
     buffer_size = s->buf_end - s->buffer;
+    // pos is the absolute position that the beginning of s->buffer corresponds to in the file
     pos = s->pos - (s->write_flag ? 0 : buffer_size);
 
     if (whence != SEEK_CUR && whence != SEEK_SET)
@@ -227,13 +228,13 @@ int64_t avio_seek(AVIOContext *s, int64_t offset, int whence)
     if (offset < 0)
         return AVERROR(EINVAL);
 
-    offset1 = offset - pos;
+    offset1 = offset - pos; // "offset1" is the relative offset from the beginning of s->buffer
     if (!s->must_flush && (!s->direct || !s->seek) &&
         offset1 >= 0 && offset1 <= buffer_size - s->write_flag) {
         /* can do the seek inside the buffer */
         s->buf_ptr = s->buffer + offset1;
     } else if ((!s->seekable ||
-               offset1 <= s->buf_end + s->short_seek_threshold - s->buffer) &&
+               offset1 <= buffer_size + s->short_seek_threshold) &&
                !s->write_flag && offset1 >= 0 &&
                (!s->direct || !s->seek) &&
               (whence != SEEK_END || force)) {
@@ -241,7 +242,7 @@ int64_t avio_seek(AVIOContext *s, int64_t offset, int whence)
             fill_buffer(s);
         if (s->eof_reached)
             return AVERROR_EOF;
-        s->buf_ptr = s->buf_end + offset - s->pos;
+        s->buf_ptr = s->buf_end - (s->pos - offset);
     } else if(!s->write_flag && offset1 < 0 && -offset1 < buffer_size>>1 && s->seek && offset > 0) {
         int64_t res;
 
@@ -302,6 +303,10 @@ int avio_feof(AVIOContext *s)
 {
     if(!s)
         return 0;
+    if(s->eof_reached){
+        s->eof_reached=0;
+        fill_buffer(s);
+    }
     return s->eof_reached;
 }
 
@@ -356,6 +361,8 @@ static inline int put_str16(AVIOContext *s, const char *str, const int be)
 invalid:
         av_log(s, AV_LOG_ERROR, "Invaid UTF8 sequence in avio_put_str16%s\n", be ? "be" : "le");
         err = AVERROR(EINVAL);
+        if (!*(q-1))
+            break;
     }
     if (be)
         avio_wb16(s, 0);
@@ -537,13 +544,13 @@ int avio_read(AVIOContext *s, unsigned char *buf, int size)
 
     size1 = size;
     while (size > 0) {
-        len = s->buf_end - s->buf_ptr;
-        if (len > size)
-            len = size;
+        len = FFMIN(s->buf_end - s->buf_ptr, size);
         if (len == 0 || s->write_flag) {
-            if((s->direct || size > s->buffer_size) && !s->update_checksum){
+            if((s->direct || size > s->buffer_size) && !s->update_checksum) {
+                // bypass the buffer and read data directly into buf
                 if(s->read_packet)
                     len = s->read_packet(s->opaque, buf, size);
+
                 if (len <= 0) {
                     /* do not modify buffer if EOF reached so that a seek back can
                     be done without rereading data */
@@ -556,6 +563,7 @@ int avio_read(AVIOContext *s, unsigned char *buf, int size)
                     s->bytes_read += len;
                     size -= len;
                     buf += len;
+                    // reset the buffer
                     s->buf_ptr = s->buffer;
                     s->buf_end = s->buffer/* + len*/;
                 }
@@ -800,6 +808,11 @@ int ffio_fdopen(AVIOContext **s, URLContext *h)
         (*s)->read_seek  = (int64_t (*)(void *, int, int64_t, int))h->prot->url_read_seek;
     }
     (*s)->av_class = &ff_avio_class;
+    
+    //add by WilliamShi
+    strcpy((*s)->iPAddress,h->iPAddress);
+    (*s)->h = (void*)h;
+    
     return 0;
 }
 
@@ -962,7 +975,7 @@ int avio_closep(AVIOContext **s)
 int avio_printf(AVIOContext *s, const char *fmt, ...)
 {
     va_list ap;
-    char buf[4096];
+    char buf[4096]; /* update doc entry in avio.h if changed */
     int ret;
 
     va_start(ap, fmt);
