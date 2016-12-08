@@ -366,8 +366,8 @@ FF_ENABLE_DEPRECATION_WARNINGS
                    "Codec for stream %d does not use global headers "
                    "but container format requires global headers\n", i);
 
-        if (codec->codec_type != AVMEDIA_TYPE_ATTACHMENT)
-            s->internal->nb_interleaved_streams++;
+        if (codec->codec_type != AVMEDIA_TYPE_ATTACHMENT && codec->codec_type != AVMEDIA_TYPE_SUBTITLE)
+            s->internal->nb_interleaved_streams++; 
     }
 
     if (!s->priv_data && of->priv_data_size > 0) {
@@ -846,6 +846,7 @@ int ff_interleave_packet_per_dts(AVFormatContext *s, AVPacket *out,
         if (s->streams[i]->last_in_packet_buffer) {
             ++stream_count;
         } else if (s->streams[i]->codec->codec_type != AVMEDIA_TYPE_ATTACHMENT &&
+                   s->streams[i]->codec->codec_type != AVMEDIA_TYPE_SUBTITLE &&
                    s->streams[i]->codec->codec_id != AV_CODEC_ID_VP8 &&
                    s->streams[i]->codec->codec_id != AV_CODEC_ID_VP9) {
             ++noninterleaved_count;
