@@ -56,7 +56,7 @@ typedef struct FLVContext {
     int searched_for_end;
     //add by teddy.ma for flv demuxer, video pkt duration
     int trust_pkt_duration;
-    int video_pkt_duration;
+    int64_t video_pkt_duration;
 } FLVContext;
 
 static int probe(AVProbeData *p, int live)
