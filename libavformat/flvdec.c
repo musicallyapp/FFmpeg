@@ -54,6 +54,9 @@ typedef struct FLVContext {
     int validate_next;
     int validate_count;
     int searched_for_end;
+    //add by teddy.ma for flv demuxer, video pkt duration
+    int trust_pkt_duration;
+    int video_pkt_duration;
 } FLVContext;
 
 static int probe(AVProbeData *p, int live)
@@ -1047,6 +1050,15 @@ retry_duration:
     pkt->dts          = dts;
     pkt->pts          = pts == AV_NOPTS_VALUE ? dts : pts;
     pkt->stream_index = st->index;
+    //add by teddy.ma
+    if (flv->trust_pkt_duration &&
+        stream_type == FLV_STREAM_TYPE_VIDEO) {
+        if (!flv->video_pkt_duration && pkt->pts) {
+            flv->video_pkt_duration = pkt->pts;
+            av_log(s, AV_LOG_DEBUG,"flv packet duration is :%d", flv->video_pkt_duration);
+        }
+        pkt->duration = flv->video_pkt_duration;
+    }
     if (flv->new_extradata[stream_type]) {
         uint8_t *side = av_packet_new_side_data(pkt, AV_PKT_DATA_NEW_EXTRADATA,
                                                 flv->new_extradata_size[stream_type]);
@@ -1087,6 +1099,8 @@ static int flv_read_seek(AVFormatContext *s, int stream_index,
 #define VD AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_DECODING_PARAM
 static const AVOption options[] = {
     { "flv_metadata", "Allocate streams according to the onMetaData array", OFFSET(trust_metadata), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VD },
+    //add by teddy.ma for support flv ijkplayer buffering logic
+    { "flv_pkt_duration", "Musically private, assume the framerate is contant", OFFSET(trust_pkt_duration), AV_OPT_TYPE_INT, { .i64 = 0}, 0, 1, VD },    
     { NULL }
 };
 
